@@ -16,9 +16,8 @@ struct keyword_map {
 };
 
 static struct keyword_map keywords[] = {
-	{ "ptr", TOKEN_KEYWORD_PTR }, { "arr", TOKEN_KEYWORD_ARR },
-	{ "u8", TOKEN_KEYWORD_U8 },   { "u16", TOKEN_KEYWORD_U16 },
-	{ "u32", TOKEN_KEYWORD_U32 }, { "u64", TOKEN_KEYWORD_U64 },
+	{ "ptr", TOKEN_KEYWORD_PTR }, { "arr", TOKEN_KEYWORD_ARR }, { "u8", TOKEN_KEYWORD_U8 },
+	{ "u16", TOKEN_KEYWORD_U16 }, { "u32", TOKEN_KEYWORD_U32 }, { "u64", TOKEN_KEYWORD_U64 },
 };
 
 static struct token *make_token(enum token_type type)
@@ -96,12 +95,10 @@ static struct token *number(struct lexer *l)
 	return tok;
 }
 
-static enum token_type check_keyword(struct lexer *l, const char *keyword,
-				     enum token_type type)
+static enum token_type check_keyword(struct lexer *l, const char *keyword, enum token_type type)
 {
 	size_t len = strlen(keyword);
-	if ((l->current - l->start == len) &&
-	    strncmp(l->start, keyword, len) == 0) {
+	if ((l->current - l->start == len) && strncmp(l->start, keyword, len) == 0) {
 		return type;
 	}
 	return TOKEN_IDENTIFIER;
@@ -116,8 +113,7 @@ static struct token *identifier(struct lexer *l)
 		advance(l);
 
 	for (i = 0; i < COUNT_OF(keywords); i++) {
-		if (check_keyword(l, keywords[i].keyword, keywords[i].type) !=
-		    TOKEN_IDENTIFIER) {
+		if (check_keyword(l, keywords[i].keyword, keywords[i].type) != TOKEN_IDENTIFIER) {
 			type = keywords[i].type;
 			break;
 		}
@@ -164,7 +160,7 @@ static struct token *scan_token(struct lexer *l)
 	}
 }
 
-int tokenize(const char *input, struct token **tokens, size_t *num_tokens)
+int tokenize(const char *input, struct token ***tokens, size_t *num_tokens)
 {
 	struct lexer l = { .start = input, .current = input };
 	struct token *tok;
@@ -180,7 +176,7 @@ int tokenize(const char *input, struct token **tokens, size_t *num_tokens)
 		if (!tok) // XXX: goto failure.
 			return -1;
 
-		(*tokens)[i] = *tok;
+		(*tokens)[i] = tok;
 		if (tok->type == TOKEN_ERROR)
 			return -1;
 		i++;
@@ -188,4 +184,9 @@ int tokenize(const char *input, struct token **tokens, size_t *num_tokens)
 
 	*num_tokens = i;
 	return 0;
+}
+
+bool is_primitive(struct token *tok)
+{
+	return tok->type >= TOKEN_KEYWORD_U8 && tok->type <= TOKEN_KEYWORD_U64;
 }

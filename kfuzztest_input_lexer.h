@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define COUNT_OF(_Array) (sizeof(_Array) / sizeof(_Array[0]))
 
@@ -28,11 +29,9 @@ enum token_type {
 };
 
 static const char *token_names[] = {
-	"TOKEN_LBRACE",	     "TOKEN_RBRACE",	  "TOKEN_LBRACKET",
-	"TOKEN_RBRACKET",    "TOKEN_COMMA",	  "TOKEN_KEYWORD_PTR",
-	"TOKEN_KEYWORD_ARR", "TOKEN_KEYWORD_U8",  "TOKEN_KEYWORD_U16",
-	"TOKEN_KEYWORD_U32", "TOKEN_KEYWORD_U64", "TOKEN_IDENTIFIER",
-	"TOKEN_INTEGER",     "TOKEN_EOF",	  "TOKEN_ERROR",
+	"TOKEN_LBRACE",	     "TOKEN_RBRACE",	  "TOKEN_LBRACKET",   "TOKEN_RBRACKET",	   "TOKEN_COMMA",
+	"TOKEN_KEYWORD_PTR", "TOKEN_KEYWORD_ARR", "TOKEN_KEYWORD_U8", "TOKEN_KEYWORD_U16", "TOKEN_KEYWORD_U32",
+	"TOKEN_KEYWORD_U64", "TOKEN_IDENTIFIER",  "TOKEN_INTEGER",    "TOKEN_EOF",	   "TOKEN_ERROR",
 };
 
 struct token {
@@ -47,6 +46,8 @@ struct token {
 	int position;
 };
 
-int tokenize(const char *input, struct token **tokens, size_t *num_tokens);
+int tokenize(const char *input, struct token ***tokens, size_t *num_tokens);
+
+bool is_primitive(struct token *tok);
 
 #endif /* KFUZZTEST_INPUT_LEXER_H */

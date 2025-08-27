@@ -33,7 +33,7 @@ enum token_type expected[] = {
 
 int main(void)
 {
-	struct token *tokens;
+	struct token **tokens;
 	size_t num_tokens;
 	int ret;
 	int i;
@@ -48,7 +48,7 @@ int main(void)
 		return 1;
 	}
 	for (i = 0; i < num_tokens; i++) {
-		if (expected[i] != tokens[i].type) {
+		if (expected[i] != tokens[i]->type) {
 			printf("mismatch in token %d\n", i);
 			return 1;
 		}
