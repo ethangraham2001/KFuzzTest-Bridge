@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define COUNT_OF(_Array) (sizeof(_Array) / sizeof(_Array[0]))
+
 enum token_type {
 	TOKEN_LBRACE,
 	TOKEN_RBRACE,

@@ -10,8 +10,6 @@
 #include <string.h>
 #include "kfuzztest_input_lexer.h"
 
-#define COUNT_OF(_Array) (sizeof(_Array) / sizeof(_Array[0]))
-
 struct keyword_map {
 	const char *keyword;
 	enum token_type type;
@@ -182,7 +180,7 @@ int tokenize(const char *input, struct token **tokens, size_t *num_tokens)
 		if (!tok) // XXX: goto failure.
 			return -1;
 
-		tokens[i] = tok;
+		(*tokens)[i] = *tok;
 		if (tok->type == TOKEN_ERROR)
 			return -1;
 		i++;
