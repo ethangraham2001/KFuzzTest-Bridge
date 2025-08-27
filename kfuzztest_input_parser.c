@@ -3,49 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 
-enum ast_node_type {
-	NODE_PROGRAM,
-	NODE_REGION,
-	NODE_PRIMITIVE,
-	NODE_POINTER,
-};
-
-struct ast_node; /* Forward declaration. */
-
-struct ast_program {
-	struct ast_node **members;
-	size_t num_members;
-};
-
-struct ast_region {
-	const char *name;
-	struct ast_node **members;
-	size_t num_members;
-};
-
-struct ast_pointer {
-	const char *points_to;
-};
-
-struct ast_primitive {
-	int byte_width;
-};
-
-struct ast_node {
-	enum ast_node_type type;
-	union {
-		struct ast_program program;
-		struct ast_region region;
-		struct ast_primitive primitive;
-		struct ast_pointer pointer;
-	} data;
-};
-
-struct parser {
-	struct token **tokens;
-	size_t token_count;
-	size_t curr_token;
-};
+#include "kfuzztest_input_parser.h"
 
 static struct token *peek(struct parser *p)
 {
@@ -83,23 +41,11 @@ static struct ast_node *parse_primitive(struct parser *p)
 	struct ast_node *ret;
 	struct token *tok;
 	int byte_width;
+
 	tok = advance(p);
-	switch (tok->type) {
-	case TOKEN_KEYWORD_U8:
-		byte_width = 1;
-		break;
-	case TOKEN_KEYWORD_U16:
-		byte_width = 2;
-		break;
-	case TOKEN_KEYWORD_U32:
-		byte_width = 4;
-		break;
-	case TOKEN_KEYWORD_U64:
-		byte_width = 8;
-		break;
-	default:
+	byte_width = primitive_byte_width(tok->type);
+	if (!byte_width)
 		return NULL;
-	}
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
@@ -131,6 +77,39 @@ static struct ast_node *parse_ptr(struct parser *p)
 	return ret;
 }
 
+static struct ast_node *parse_arr(struct parser *p)
+{
+	struct ast_node *ret;
+	struct token *type, *num_elems;
+	if (!consume(p, TOKEN_KEYWORD_ARR, "expected 'arr'"))
+		return NULL;
+	if (!consume(p, TOKEN_LBRACKET, "expected '['"))
+		return NULL;
+
+	type = advance(p);
+	if (!is_primitive(type))
+		return NULL;
+
+	if (!consume(p, TOKEN_COMMA, "expected ','"))
+		return NULL;
+
+	num_elems = advance(p);
+	if (num_elems->type != TOKEN_INTEGER)
+		return NULL;
+
+	if (!consume(p, TOKEN_RBRACKET, "expected ']'"))
+		return NULL;
+
+	ret = malloc(sizeof(*ret));
+	if (!ret)
+		return NULL;
+
+	ret->type = NODE_ARRAY;
+	ret->data.array.num_elems = num_elems->data.integer;
+	ret->data.array.elem_size = primitive_byte_width(type->type);
+	return ret;
+}
+
 static struct ast_node *parse_type(struct parser *p)
 {
 	if (is_primitive(peek(p))) {
@@ -138,6 +117,9 @@ static struct ast_node *parse_type(struct parser *p)
 	}
 	if (peek(p)->type == TOKEN_KEYWORD_PTR) {
 		return parse_ptr(p);
+	}
+	if (peek(p)->type == TOKEN_KEYWORD_ARR) {
+		return parse_arr(p);
 	}
 	return NULL;
 }
@@ -151,14 +133,15 @@ static struct ast_node *parse_region(struct parser *p)
 	struct ast_node *ret;
 	int i;
 
-	if (!match(p, TOKEN_IDENTIFIER))
+	identifier = consume(p, TOKEN_IDENTIFIER, "expected identifier");
+	if (!identifier) {
 		return NULL;
+	}
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
 		return NULL;
 
-	identifier = advance(p);
 	tok = advance(p);
 	if (tok->type != TOKEN_LBRACE)
 		goto fail_early;
@@ -206,7 +189,7 @@ static struct ast_node *parse_program(struct parser *p)
 		return NULL;
 	ret->type = NODE_PROGRAM;
 
-	prog = &reg->data.program;
+	prog = &ret->data.program;
 	prog->num_members = 0;
 	prog->members = NULL;
 	while (!match(p, TOKEN_EOF)) {
@@ -215,6 +198,7 @@ static struct ast_node *parse_program(struct parser *p)
 			goto fail;
 		/* TODO: Handle realloc failure. */
 		prog->members = realloc(prog->members, ++prog->num_members * sizeof(struct ast_node *));
+		prog->members[prog->num_members - 1] = reg;
 	}
 
 	return ret;
@@ -227,7 +211,7 @@ fail:
 	return NULL;
 }
 
-static struct ast_node *parse(struct token **tokens, size_t token_count)
+struct ast_node *parse(struct token **tokens, size_t token_count)
 {
 	struct parser p = { .tokens = tokens, .token_count = token_count, .curr_token = 0 };
 	return parse_program(&p);

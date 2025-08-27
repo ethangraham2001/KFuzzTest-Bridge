@@ -49,5 +49,6 @@ struct token {
 int tokenize(const char *input, struct token ***tokens, size_t *num_tokens);
 
 bool is_primitive(struct token *tok);
+int primitive_byte_width(enum token_type type);
 
 #endif /* KFUZZTEST_INPUT_LEXER_H */

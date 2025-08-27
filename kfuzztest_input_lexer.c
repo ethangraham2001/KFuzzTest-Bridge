@@ -160,6 +160,22 @@ static struct token *scan_token(struct lexer *l)
 	}
 }
 
+int primitive_byte_width(enum token_type type)
+{
+	switch (type) {
+	case TOKEN_KEYWORD_U8:
+		return 1;
+	case TOKEN_KEYWORD_U16:
+		return 2;
+	case TOKEN_KEYWORD_U32:
+		return 4;
+	case TOKEN_KEYWORD_U64:
+		return 8;
+	default:
+		return 0;
+	}
+}
+
 int tokenize(const char *input, struct token ***tokens, size_t *num_tokens)
 {
 	struct lexer l = { .start = input, .current = input };
