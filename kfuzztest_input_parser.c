@@ -5,6 +5,8 @@
 
 #include "kfuzztest_input_parser.h"
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 static struct token *peek(struct parser *p)
 {
 	return p->tokens[p->curr_token];
@@ -73,6 +75,7 @@ static struct ast_node *parse_ptr(struct parser *p)
 
 	ret = malloc(sizeof(*ret));
 	ret->type = NODE_POINTER;
+	/* TODO: check return value of this. */
 	ret->data.pointer.points_to = strndup(tok->data.identifier.start, tok->data.identifier.length);
 	return ret;
 }
@@ -128,7 +131,6 @@ static struct ast_node *parse_region(struct parser *p)
 {
 	struct token *tok, *identifier;
 	struct ast_region *region;
-	enum token_type tok_type;
 	struct ast_node *node;
 	struct ast_node *ret;
 	int i;
@@ -209,6 +211,35 @@ fail:
 	free(prog->members);
 	free(ret);
 	return NULL;
+}
+
+size_t node_alignment(struct ast_node *node)
+{
+	int max_alignment;
+	int i;
+
+	switch (node->type) {
+	case NODE_PROGRAM:
+		max_alignment = 1;
+		for (int i = 0; i < node->data.program.num_members; i++)
+			max_alignment = MAX(max_alignment, node_alignment(node->data.program.members[i]));
+		return max_alignment;
+	case NODE_REGION:
+		max_alignment = 1;
+		for (int i = 0; i < node->data.region.num_members; i++)
+			max_alignment = MAX(max_alignment, node_alignment(node->data.region.members[i]));
+		return max_alignment;
+	case NODE_ARRAY:
+		return node->data.array.elem_size;
+	case NODE_PRIMITIVE:
+		/* Primitives are aligned to their size. */
+		return node->data.primitive.byte_width;
+	case NODE_POINTER:
+		return sizeof(uintptr_t);
+	}
+
+	/* Anything should be at least 1-byte-aligned. */
+	return 1;
 }
 
 struct ast_node *parse(struct token **tokens, size_t token_count)
