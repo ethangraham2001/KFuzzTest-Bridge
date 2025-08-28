@@ -19,18 +19,13 @@ const char *usage_str = "usage: "
 
 static int invoke_one(const char *input_fmt, const char *fuzz_target, const char *input_filepath);
 
-static void usage()
-{
-	printf("%s\n", usage_str);
-}
-
 int main(int argc, char *argv[])
 {
 	int ret;
 	int i;
 
 	if (argc != 4) {
-		usage();
+		printf("%s\n", usage_str);
 		return -1;
 	}
 
