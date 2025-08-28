@@ -136,9 +136,8 @@ static struct ast_node *parse_region(struct parser *p)
 	int i;
 
 	identifier = consume(p, TOKEN_IDENTIFIER, "expected identifier");
-	if (!identifier) {
+	if (!identifier)
 		return NULL;
-	}
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
@@ -164,6 +163,8 @@ static struct ast_node *parse_region(struct parser *p)
 	}
 
 	if (!consume(p, TOKEN_RBRACE, "expected '}'"))
+		goto fail;
+	if (!consume(p, TOKEN_SEMICOLON, "expected ';'"))
 		goto fail;
 
 	ret->type = NODE_REGION;

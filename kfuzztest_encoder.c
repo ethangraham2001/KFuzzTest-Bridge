@@ -7,7 +7,6 @@
 #include "kfuzztest_encoder.h"
 #include "kfuzztest_input_parser.h"
 #include "rand_source.h"
-#include "debug.h"
 
 struct byte_buffer {
 	char *buffer;
@@ -210,16 +209,13 @@ static int encode_value_le(struct encoder_ctx *ctx, struct ast_node *node)
 			return -1;
 		add_reloc(ctx, (struct reloc_info){
 				       .src_reg = ctx->curr_reg, .offset = ctx->reg_offset, .dst_reg = dst_reg });
-		/* Placeholder pointer value, 0xFF...FF. */
-		for (i = 0; i < sizeof(uintptr_t); i++)
-			if ((ret = append_byte(ctx->payload, 0xFF)))
-				return ret;
+		/* Placeholder pointer value, as pointers are patched by KFuzzTest anyways. */
+		encode_le(ctx->payload, UINTPTR_MAX, sizeof(uintptr_t));
 		ctx->reg_offset += sizeof(uintptr_t);
 		break;
 	case NODE_PROGRAM:
 	case NODE_REGION:
 	default:
-		/* Only values should be encoded. */
 		return -1;
 	}
 	return 0;

@@ -150,6 +150,8 @@ static struct token *scan_token(struct lexer *l)
 		return make_token(TOKEN_RBRACKET);
 	case ',':
 		return make_token(TOKEN_COMMA);
+	case ';':
+		return make_token(TOKEN_SEMICOLON);
 	default:
 		retreat(l);
 		if (is_digit(c))
