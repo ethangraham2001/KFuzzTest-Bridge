@@ -182,25 +182,25 @@ int tokenize(const char *input, struct token ***tokens, size_t *num_tokens)
 {
 	struct lexer l = { .start = input, .current = input };
 	struct token *tok;
-	size_t i;
+	size_t token_count;
 
 	*tokens = calloc(1024, sizeof(struct token *));
 	if (!*tokens)
 		return -1;
 
-	i = 0;
+	token_count = 0;
 	do {
 		tok = scan_token(&l);
 		if (!tok) // XXX: goto failure.
 			return -1;
 
-		(*tokens)[i] = tok;
+		(*tokens)[token_count] = tok;
 		if (tok->type == TOKEN_ERROR)
 			return -1;
-		i++;
+		token_count++;
 	} while (tok->type != TOKEN_EOF);
 
-	*num_tokens = i;
+	*num_tokens = token_count;
 	return 0;
 }
 

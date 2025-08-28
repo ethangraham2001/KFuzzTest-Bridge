@@ -105,7 +105,7 @@ struct reloc_info {
 
 struct encoder_ctx {
 	struct byte_buffer *payload;
-	struct rand_source *rand;
+	struct rand_stream *rand;
 
 	struct region_info *regions;
 	size_t num_regions;
@@ -190,7 +190,9 @@ static int encode_value_le(struct encoder_ctx *ctx, struct ast_node *node)
 	case NODE_ARRAY:
 		for (i = 0; i < node->data.array.num_elems; i++) {
 			for (int j = 0; j < node->data.array.elem_size; j++) {
-				if ((ret = append_byte(ctx->payload, next(ctx->rand))))
+				if ((ret = next_byte(ctx->rand, &rand_char)))
+					return ret;
+				if ((ret = append_byte(ctx->payload, rand_char)))
 					return ret;
 			}
 		}
@@ -198,7 +200,9 @@ static int encode_value_le(struct encoder_ctx *ctx, struct ast_node *node)
 		break;
 	case NODE_PRIMITIVE:
 		for (i = 0; i < node->data.primitive.byte_width; i++) {
-			if ((ret = append_byte(ctx->payload, next(ctx->rand))))
+			if ((ret = next_byte(ctx->rand, &rand_char)))
+				return ret;
+			if ((ret = append_byte(ctx->payload, rand_char)))
 				return ret;
 		}
 		ctx->reg_offset += node->data.primitive.byte_width;
@@ -329,7 +333,7 @@ static size_t reloc_table_size(struct encoder_ctx *ctx)
 	return 2 * sizeof(uint32_t) + 3 * ctx->num_relocations * sizeof(uint32_t);
 }
 
-char *encode(struct ast_node *top_level, struct rand_source *r, size_t *num_bytes)
+char *encode(struct ast_node *top_level, struct rand_stream *r, size_t *num_bytes)
 {
 	char prefix[8] = { 0xCE, 0xFA, 0x0B, 0X00, 0x00, 0x00, 0x00, 0x00 };
 	struct byte_buffer *region_array;

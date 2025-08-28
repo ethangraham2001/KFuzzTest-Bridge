@@ -4,6 +4,6 @@
 #include "rand_source.h"
 #include "kfuzztest_input_parser.h"
 
-char *encode(struct ast_node *top_level, struct rand_source *r, size_t *num_bytes);
+char *encode(struct ast_node *top_level, struct rand_stream *r, size_t *num_bytes);
 
 #endif /* KFUZZTEST_ENCODER_H */
