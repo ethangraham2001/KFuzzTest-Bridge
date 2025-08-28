@@ -11,7 +11,6 @@
 #include <unistd.h>
 
 #include "byte_buffer.h"
-#include "debug.h"
 #include "kfuzztest_encoder.h"
 #include "kfuzztest_input_lexer.h"
 #include "kfuzztest_input_parser.h"
@@ -92,9 +91,11 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 		return err;
 	}
 
-	print_bytes(bb->buffer, num_bytes);
-
 	err = invoke_kfuzztest_target(fuzz_target, bb->buffer, num_bytes);
+	if (err) {
+		printf("invocation failed: %s\n", strerror(-err));
+		return err;
+	}
 	destroy_byte_buffer(bb);
 	return err;
 }
