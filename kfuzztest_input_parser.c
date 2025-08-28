@@ -1,8 +1,9 @@
-#include "kfuzztest_input_lexer.h"
+#include <asm-generic/errno-base.h>
 
 #include <string.h>
 #include <stdio.h>
 
+#include "kfuzztest_input_lexer.h"
 #include "kfuzztest_input_parser.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -22,7 +23,7 @@ static struct token *advance(struct parser *p)
 static struct token *consume(struct parser *p, enum token_type type, const char *err_msg)
 {
 	if (peek(p)->type != type) {
-		printf("%s\n", err_msg);
+		printf("parser failure: %s\n", err_msg);
 		return NULL;
 	}
 	return advance(p);
@@ -34,7 +35,7 @@ static bool match(struct parser *p, enum token_type t)
 	return tok->type == t;
 }
 
-static struct ast_node *parse_primitive(struct parser *p)
+static int parse_primitive(struct parser *p, struct ast_node **node_ret)
 {
 	struct ast_node *ret;
 	struct token *tok;
@@ -43,101 +44,112 @@ static struct ast_node *parse_primitive(struct parser *p)
 	tok = advance(p);
 	byte_width = primitive_byte_width(tok->type);
 	if (!byte_width)
-		return NULL;
+		return -EINVAL;
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
-		return NULL;
+		return -ENOMEM;
+
 	ret->type = NODE_PRIMITIVE;
 	ret->data.primitive.byte_width = byte_width;
-	return ret;
+	*node_ret = ret;
+	return 0;
 }
 
-static struct ast_node *parse_ptr(struct parser *p)
+static int parse_ptr(struct parser *p, struct ast_node **node_ret)
 {
+	const char *points_to;
 	struct ast_node *ret;
 	struct token *tok;
 	if (!consume(p, TOKEN_KEYWORD_PTR, "expected 'ptr'"))
-		return NULL;
+		return -EINVAL;
 	if (!consume(p, TOKEN_LBRACKET, "expected '['"))
-		return NULL;
+		return -EINVAL;
 
 	tok = advance(p);
 	if (tok->type != TOKEN_IDENTIFIER)
-		return NULL;
+		return -EINVAL;
 
 	if (!consume(p, TOKEN_RBRACKET, "expected ']'"))
-		return NULL;
+		return -EINVAL;
 
 	ret = malloc(sizeof(*ret));
 	ret->type = NODE_POINTER;
-	/* TODO: check return value of this. */
-	ret->data.pointer.points_to = strndup(tok->data.identifier.start, tok->data.identifier.length);
-	return ret;
+
+	points_to = strndup(tok->data.identifier.start, tok->data.identifier.length);
+	if (!points_to) {
+		free(ret);
+		return -EINVAL;
+	}
+
+	ret->data.pointer.points_to = points_to;
+	*node_ret = ret;
+	return 0;
 }
 
-static struct ast_node *parse_arr(struct parser *p)
+static int parse_arr(struct parser *p, struct ast_node **node_ret)
 {
-	struct ast_node *ret;
 	struct token *type, *num_elems;
-	if (!consume(p, TOKEN_KEYWORD_ARR, "expected 'arr'"))
-		return NULL;
-	if (!consume(p, TOKEN_LBRACKET, "expected '['"))
-		return NULL;
+	struct ast_node *ret;
+
+	if (!consume(p, TOKEN_KEYWORD_ARR, "expected 'arr'") || !consume(p, TOKEN_LBRACKET, "expected '['"))
+		return -EINVAL;
 
 	type = advance(p);
 	if (!is_primitive(type))
-		return NULL;
+		return -EINVAL;
 
 	if (!consume(p, TOKEN_COMMA, "expected ','"))
-		return NULL;
+		return -EINVAL;
 
 	num_elems = advance(p);
 	if (num_elems->type != TOKEN_INTEGER)
-		return NULL;
+		return -EINVAL;
 
 	if (!consume(p, TOKEN_RBRACKET, "expected ']'"))
-		return NULL;
+		return -EINVAL;
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
-		return NULL;
+		return -ENOMEM;
 
 	ret->type = NODE_ARRAY;
 	ret->data.array.num_elems = num_elems->data.integer;
 	ret->data.array.elem_size = primitive_byte_width(type->type);
-	return ret;
+	*node_ret = ret;
+	return 0;
 }
 
-static struct ast_node *parse_type(struct parser *p)
+static int parse_type(struct parser *p, struct ast_node **node_ret)
 {
-	if (is_primitive(peek(p))) {
-		return parse_primitive(p);
-	}
-	if (peek(p)->type == TOKEN_KEYWORD_PTR) {
-		return parse_ptr(p);
-	}
-	if (peek(p)->type == TOKEN_KEYWORD_ARR) {
-		return parse_arr(p);
-	}
-	return NULL;
+	if (is_primitive(peek(p)))
+		return parse_primitive(p, node_ret);
+
+	if (peek(p)->type == TOKEN_KEYWORD_PTR)
+		return parse_ptr(p, node_ret);
+
+	if (peek(p)->type == TOKEN_KEYWORD_ARR)
+		return parse_arr(p, node_ret);
+
+	return -EINVAL;
 }
 
-static struct ast_node *parse_region(struct parser *p)
+static int parse_region(struct parser *p, struct ast_node **node_ret)
 {
 	struct token *tok, *identifier;
 	struct ast_region *region;
 	struct ast_node *node;
 	struct ast_node *ret;
+	int err;
 	int i;
 
 	identifier = consume(p, TOKEN_IDENTIFIER, "expected identifier");
 	if (!identifier)
-		return NULL;
+		return -EINVAL;
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
-		return NULL;
+		return -ENOMEM;
 
 	tok = advance(p);
 	if (tok->type != TOKEN_LBRACE)
@@ -145,26 +157,28 @@ static struct ast_node *parse_region(struct parser *p)
 
 	region = &ret->data.region;
 	region->name = strndup(identifier->data.identifier.start, identifier->data.identifier.length);
-	if (!region->name)
+	if (!region->name) {
+		err = -ENOMEM;
 		goto fail_early;
+	}
 
 	region->num_members = 0;
 	while (!match(p, TOKEN_RBRACE)) {
-		node = parse_type(p);
-		if (!node)
+		err = parse_type(p, &node);
+		if (err)
 			goto fail;
-		/* TODO: Handle realloc failure. */
 		region->members = realloc(region->members, ++region->num_members * sizeof(struct ast_node *));
 		region->members[region->num_members - 1] = node;
 	}
 
-	if (!consume(p, TOKEN_RBRACE, "expected '}'"))
+	if (!consume(p, TOKEN_RBRACE, "expected '}'") || !consume(p, TOKEN_SEMICOLON, "expected ';'")) {
+		err = -EINVAL;
 		goto fail;
-	if (!consume(p, TOKEN_SEMICOLON, "expected ';'"))
-		goto fail;
+	}
 
 	ret->type = NODE_REGION;
-	return ret;
+	*node_ret = ret;
+	return 0;
 
 fail:
 	for (i = 0; i < region->num_members; i++)
@@ -173,41 +187,49 @@ fail:
 	free(region->members);
 fail_early:
 	free(ret);
-	return NULL;
+	return err;
 }
 
-static struct ast_node *parse_program(struct parser *p)
+static int parse_program(struct parser *p, struct ast_node **node_ret)
 {
 	struct ast_program *prog;
 	struct ast_node *reg;
 	struct ast_node *ret;
+	void *new_ptr;
+	int err;
 	int i;
 
 	ret = malloc(sizeof(*ret));
 	if (!ret)
-		return NULL;
+		return -ENOMEM;
 	ret->type = NODE_PROGRAM;
 
 	prog = &ret->data.program;
 	prog->num_members = 0;
 	prog->members = NULL;
 	while (!match(p, TOKEN_EOF)) {
-		reg = parse_region(p);
-		if (!reg)
+		err = parse_region(p, &reg);
+		if (err)
 			goto fail;
-		/* TODO: Handle realloc failure. */
-		prog->members = realloc(prog->members, ++prog->num_members * sizeof(struct ast_node *));
+
+		new_ptr = realloc(prog->members, ++prog->num_members * sizeof(struct ast_node *));
+		if (!new_ptr) {
+			err = -ENOMEM;
+			goto fail;
+		}
+		prog->members = new_ptr;
 		prog->members[prog->num_members - 1] = reg;
 	}
 
-	return ret;
+	*node_ret = ret;
+	return 0;
 
 fail:
 	for (i = 0; i < prog->num_members; i++)
 		free(prog->members[i]);
 	free(prog->members);
 	free(ret);
-	return NULL;
+	return err;
 }
 
 size_t node_alignment(struct ast_node *node)
@@ -259,8 +281,8 @@ size_t node_size(struct ast_node *node)
 	return 0;
 }
 
-struct ast_node *parse(struct token **tokens, size_t token_count)
+int parse(struct token **tokens, size_t token_count, struct ast_node **node_ret)
 {
 	struct parser p = { .tokens = tokens, .token_count = token_count, .curr_token = 0 };
-	return parse_program(&p);
+	return parse_program(&p, node_ret);
 }

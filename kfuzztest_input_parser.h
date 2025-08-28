@@ -54,7 +54,7 @@ struct parser {
 	size_t curr_token;
 };
 
-struct ast_node *parse(struct token **tokens, size_t token_count);
+int parse(struct token **tokens, size_t token_count, struct ast_node **node_ret);
 
 size_t node_size(struct ast_node *node);
 size_t node_alignment(struct ast_node *node);

@@ -7,6 +7,7 @@
 #include <asm-generic/errno-base.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "debug.h"
@@ -24,12 +25,16 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 
 int main(int argc, char *argv[])
 {
+	int ret;
+
 	if (argc != 4) {
 		printf("%s\n", usage_str);
-		return -1;
+		return 1;
 	}
 
-	return invoke_one(argv[1], argv[2], argv[3]);
+	ret = invoke_one(argv[1], argv[2], argv[3]);
+	if (ret)
+		return 1;
 }
 
 static int invoke_kfuzztest_target(const char *target_name, const char *data, size_t data_size)
@@ -66,22 +71,30 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 	struct token **tokens;
 	size_t num_tokens;
 	size_t num_bytes;
-	int ret;
+	int err;
 
-	ret = tokenize(input_fmt, &tokens, &num_tokens);
-	if (ret)
-		return ret;
+	err = tokenize(input_fmt, &tokens, &num_tokens);
+	if (err) {
+		printf("tokenization failed: %s\n", strerror(-err));
+		return err;
+	}
 
-	ast_prog = parse(tokens, num_tokens);
+	err = parse(tokens, num_tokens, &ast_prog);
+	if (err) {
+		printf("parsing failed: %s\n", strerror(-err));
+		return err;
+	}
 
 	rs = new_rand_stream(input_filepath, 1024);
-	ret = encode(ast_prog, rs, &num_bytes, &bb);
-	if (ret)
-		return ret;
+	err = encode(ast_prog, rs, &num_bytes, &bb);
+	if (err) {
+		printf("encoding failed: %s\n", strerror(-err));
+		return err;
+	}
 
 	print_bytes(bb->buffer, num_bytes);
 
-	ret = invoke_kfuzztest_target(fuzz_target, bb->buffer, num_bytes);
+	err = invoke_kfuzztest_target(fuzz_target, bb->buffer, num_bytes);
 	destroy_byte_buffer(bb);
-	return ret;
+	return err;
 }

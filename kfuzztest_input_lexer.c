@@ -4,6 +4,8 @@
  *
  * Copyright 2025 Google LLC
  */
+#include <asm-generic/errno-base.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -88,7 +90,6 @@ static struct token *number(struct lexer *l)
 	uint64_t value;
 	while (is_digit(peek(l)))
 		advance(l);
-	// XXX: could be problematic.
 	value = strtoull(l->start, NULL, 10);
 	tok = make_token(TOKEN_INTEGER);
 	tok->data.integer = value;
@@ -98,9 +99,8 @@ static struct token *number(struct lexer *l)
 static enum token_type check_keyword(struct lexer *l, const char *keyword, enum token_type type)
 {
 	size_t len = strlen(keyword);
-	if ((l->current - l->start == len) && strncmp(l->start, keyword, len) == 0) {
+	if ((l->current - l->start == len) && strncmp(l->start, keyword, len) == 0)
 		return type;
-	}
 	return TOKEN_IDENTIFIER;
 }
 
@@ -181,27 +181,54 @@ int primitive_byte_width(enum token_type type)
 int tokenize(const char *input, struct token ***tokens, size_t *num_tokens)
 {
 	struct lexer l = { .start = input, .current = input };
-	struct token *tok;
+	struct token **ret_tokens;
+	size_t token_arr_size;
 	size_t token_count;
+	struct token *tok;
+	void *tmp;
+	size_t i;
+	int err;
 
-	*tokens = calloc(1024, sizeof(struct token *));
-	if (!*tokens)
-		return -1;
+	token_arr_size = 128;
+	ret_tokens = calloc(token_arr_size, sizeof(struct token *));
+	if (!ret_tokens)
+		return -ENOMEM;
 
 	token_count = 0;
 	do {
 		tok = scan_token(&l);
-		if (!tok) // XXX: goto failure.
-			return -1;
+		if (!tok) {
+			err = -ENOMEM;
+			goto failure;
+		}
 
-		(*tokens)[token_count] = tok;
-		if (tok->type == TOKEN_ERROR)
-			return -1;
+		if (token_count == token_arr_size) {
+			token_arr_size *= 2;
+			tmp = realloc(ret_tokens, token_arr_size);
+			if (!tmp) {
+				err = -ENOMEM;
+				goto failure;
+			}
+			ret_tokens = tmp;
+		}
+
+		ret_tokens[token_count] = tok;
+		if (tok->type == TOKEN_ERROR) {
+			err = -EINVAL;
+			goto failure;
+		}
 		token_count++;
 	} while (tok->type != TOKEN_EOF);
 
+	*tokens = ret_tokens;
 	*num_tokens = token_count;
 	return 0;
+
+failure:
+	for (i = 0; i < token_count; i++)
+		free(ret_tokens[i]);
+	free(ret_tokens);
+	return err;
 }
 
 bool is_primitive(struct token *tok)
