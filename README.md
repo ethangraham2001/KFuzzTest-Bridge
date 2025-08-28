@@ -7,12 +7,15 @@ source file.
 
 ## Usage
 
+First, build the binary with `make`. You may have to do this on the system being
+(e.g., QEMU VM) to avoid GLIBC incompatibilities.
+
 Example usage:
 
 ```sh
 ./kfuzztest-bridge \
     "foo { u32 ptr[bar] }; bar { ptr[data] }; data { arr[u8, 42] };" \
-    "my-fuzz-target" random-blob.bin
+    "my-fuzz-target" /dev/urandom
 ```
 
 Where
