@@ -4,6 +4,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/**
+ * struct rand_stream - a cached bytestream reader
+ *
+ * Reads and returns bytes from a file, using cached pre-fetching to amortize
+ * the cost of reads.
+ */
 struct rand_stream {
 	FILE *source;
 	char *buffer;
@@ -11,8 +17,23 @@ struct rand_stream {
 	size_t buffer_pos;
 };
 
+/**
+ * new_rand_stream - return a new struct rand_stream
+ *
+ * @path_to_file: source of the output byte stream.
+ * @cache_size: size of the read-ahead cache in bytes.
+ */
 struct rand_stream *new_rand_stream(const char *path_to_file, size_t cache_size);
 
+/**
+ * next_byte - return the next byte from a struct rand_stream
+ *
+ * @rs: an initialized struct rand_stream.
+ * @ret: return pointer.
+ *
+ * @return 0 on success or a negative value on failure.
+ *
+ */
 int next_byte(struct rand_stream *rs, char *ret);
 
 #endif /* RAND_SOURCE_H */

@@ -4,15 +4,6 @@
  *
  * Copyright 2025 Google LLC
  */
-
-/**
- * Let's try and encode this...
- * struct thing {
- *	char *foo;
- *	size_t size;
- * }
- */
-
 #include <stdio.h>
 
 #include "kfuzztest_input_lexer.h"
@@ -30,21 +21,35 @@ enum token_type expected[] = {
 	TOKEN_LBRACKET,	  TOKEN_IDENTIFIER,  TOKEN_RBRACKET,	TOKEN_RBRACE,	   TOKEN_EOF,
 };
 
-int main(void)
+const char *usage_str = "usage: "
+			"./kfuzztest-bridge <program-description> <fuzz-target-name> <input-file>\n"
+			"for more detailed information see <docs>";
+
+static void usage()
+{
+	printf("%s\n", usage_str);
+}
+
+int main(int argc, char *argv[])
 {
 	struct token **tokens;
 	size_t num_tokens;
 	int ret;
 	int i;
 
-	ret = tokenize(input, &tokens, &num_tokens);
+	if (argc != 4) {
+		usage();
+		return -1;
+	}
+
+	ret = tokenize(argv[1], &tokens, &num_tokens);
 	if (ret)
 		return ret;
 
 	struct ast_node *result = parse(tokens, num_tokens);
 	visualize_ast(result);
 
-	struct rand_stream *r = new_rand_stream("/dev/urandom", 1024);
+	struct rand_stream *r = new_rand_stream(argv[3], 1024);
 	size_t num_bytes;
 	char *bytes = encode(result, r, &num_bytes);
 	print_bytes(bytes, num_bytes);
