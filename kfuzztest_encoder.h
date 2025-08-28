@@ -4,6 +4,6 @@
 #include "kfuzztest_input_parser.h"
 #include "rand_stream.h"
 
-struct byte_buffer *encode(struct ast_node *top_level, struct rand_stream *r, size_t *num_bytes);
+int encode(struct ast_node *top_level, struct rand_stream *r, size_t *num_bytes, struct byte_buffer **ret);
 
 #endif /* KFUZZTEST_ENCODER_H */

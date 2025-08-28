@@ -61,11 +61,11 @@ static int invoke_kfuzztest_target(const char *target_name, const char *data, si
 static int invoke_one(const char *input_fmt, const char *fuzz_target, const char *input_filepath)
 {
 	struct ast_node *ast_prog;
+	struct byte_buffer *bb;
 	struct rand_stream *rs;
 	struct token **tokens;
 	size_t num_tokens;
 	size_t num_bytes;
-	struct byte_buffer *bytes;
 	int ret;
 
 	ret = tokenize(input_fmt, &tokens, &num_tokens);
@@ -75,12 +75,13 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 	ast_prog = parse(tokens, num_tokens);
 
 	rs = new_rand_stream(input_filepath, 1024);
-	bytes = encode(ast_prog, rs, &num_bytes);
-	if (!bytes)
-		return -EINVAL;
-	print_bytes(bytes->buffer, num_bytes);
+	ret = encode(ast_prog, rs, &num_bytes, &bb);
+	if (ret)
+		return ret;
 
-	ret = invoke_kfuzztest_target(fuzz_target, bytes->buffer, num_bytes);
-	destroy_byte_buffer(bytes);
+	print_bytes(bb->buffer, num_bytes);
+
+	ret = invoke_kfuzztest_target(fuzz_target, bb->buffer, num_bytes);
+	destroy_byte_buffer(bb);
 	return ret;
 }
