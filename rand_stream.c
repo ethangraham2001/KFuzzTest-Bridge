@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Implements a cached file-reader for iterating over a byte stream of
+ * pseudo-random data
+ *
+ * Copyright 2025 Google LLC
+ */
 #include "rand_stream.h"
 
 static int refill(struct rand_stream *rs)

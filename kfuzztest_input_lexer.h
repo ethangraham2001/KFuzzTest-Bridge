@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Lexer for KFuzzTest textual input format
+ *
+ * Copyright 2025 Google LLC
+ */
 #ifndef KFUZZTEST_INPUT_LEXER_H
 #define KFUZZTEST_INPUT_LEXER_H 1
 

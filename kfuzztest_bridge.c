@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * KFuzzTest tool for sending inputs into a KFuzzTest harness.
+ * KFuzzTest tool for sending inputs into a KFuzzTest harness
  *
  * Copyright 2025 Google LLC
  */
 #include <asm-generic/errno-base.h>
-#include <stdio.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "debug.h"
 #include "byte_buffer.h"
+#include "debug.h"
+#include "kfuzztest_encoder.h"
 #include "kfuzztest_input_lexer.h"
 #include "kfuzztest_input_parser.h"
-#include "kfuzztest_encoder.h"
 #include "rand_stream.h"
 
 const char *usage_str = "usage: "

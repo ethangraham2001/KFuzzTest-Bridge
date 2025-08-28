@@ -1,7 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Parser for KFuzzTest textual input format
+ *
+ * Copyright 2025 Google LLC
+ */
 #include <asm-generic/errno-base.h>
-
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "kfuzztest_input_lexer.h"
 #include "kfuzztest_input_parser.h"

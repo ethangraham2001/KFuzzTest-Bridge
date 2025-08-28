@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Debug helpers for the parser and the encoder
+ *
+ * Copyright 2025 Google LLC
+ */
 #ifndef DEBUG_H
 #define DEBUG_H 1
 

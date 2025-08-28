@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * KFuzzTest parser for text inputs
+ * Parser for KFuzzTest textual input format
  *
  * Copyright 2025 Google LLC
  */
 #include <asm-generic/errno-base.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <string.h>
+
 #include "kfuzztest_input_lexer.h"
 
 struct keyword_map {

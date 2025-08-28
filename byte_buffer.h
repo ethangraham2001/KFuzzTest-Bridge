@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * A simple byte buffer implementation for encoding binary data
+ *
+ * Copyright 2025 Google LLC
+ */
 #ifndef BYTE_BUFFER_H
 #define BYTE_BUFFER_H
 

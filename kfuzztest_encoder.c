@@ -1,12 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Encoder for KFuzzTest binary input format
+ *
+ * Copyright 2025 Google LLC
+ */
 #include <asm-generic/errno-base.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "byte_buffer.h"
 #include "kfuzztest_input_parser.h"
 #include "rand_stream.h"
-#include "byte_buffer.h"
 
 #define KFUZZTEST_MAGIC 0xBFACE
 #define KFUZZTEST_PROTO_VERSION 0
