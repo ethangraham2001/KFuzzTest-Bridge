@@ -242,6 +242,29 @@ size_t node_alignment(struct ast_node *node)
 	return 1;
 }
 
+size_t node_size(struct ast_node *node)
+{
+	size_t total = 0;
+	int i;
+
+	switch (node->type) {
+	case NODE_PROGRAM:
+		for (int i = 0; i < node->data.program.num_members; i++)
+			total += node_size(node->data.program.members[i]);
+		return total;
+	case NODE_REGION:
+		for (int i = 0; i < node->data.region.num_members; i++)
+			total += node_size(node->data.region.members[i]);
+		return total;
+	case NODE_ARRAY:
+		return node->data.array.elem_size * node->data.array.num_elems;
+	case NODE_PRIMITIVE:
+		return node->data.primitive.byte_width;
+	case NODE_POINTER:
+		return sizeof(uintptr_t);
+	}
+}
+
 struct ast_node *parse(struct token **tokens, size_t token_count)
 {
 	struct parser p = { .tokens = tokens, .token_count = token_count, .curr_token = 0 };

@@ -56,4 +56,7 @@ struct parser {
 
 struct ast_node *parse(struct token **tokens, size_t token_count);
 
+size_t node_size(struct ast_node *node);
+size_t node_alignment(struct ast_node *node);
+
 #endif /* KFUZZTEST_INPUT_PARSER_H */

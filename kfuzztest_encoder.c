@@ -1,3 +1,4 @@
+#include <asm-generic/errno-base.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,18 @@ int append_byte(struct byte_buffer *buf, char c)
 	return append_bytes(buf, &c, 1);
 }
 
+static int encode_le(struct byte_buffer *buf, uint64_t value, size_t byte_width)
+{
+	int ret;
+	int i;
+	for (i = 0; i < byte_width; ++i) {
+		if ((ret = append_byte(buf, (uint8_t)((value >> (i * 8)) & 0xFF)))) {
+			return ret;
+		}
+	}
+	return 0;
+}
+
 int pad(struct byte_buffer *buf, size_t num_padding)
 {
 	int ret;
@@ -68,77 +81,259 @@ int pad(struct byte_buffer *buf, size_t num_padding)
 	return 0;
 }
 
-/**
- * Sequential lookup of region ID from region name.
- */
-struct region_lookup {
-	const char **entries;
-	size_t num_entries;
-};
-
-int lookup(struct region_lookup *l, const char *name)
+int round_up_to_multiple(int x, int n)
 {
-	int i;
-	for (int i = 0; i < l->num_entries; i++)
-		if (strcmp(name, l->entries[i]) == 0)
-			return i;
-	return -1;
+	if (n == 0) {
+		return x;
+	}
+	return ((x + n - 1) / n) * n;
 }
 
-int insert(struct region_lookup *l, const char *name)
+struct region_info {
+	const char *name;
+	uint32_t offset;
+	uint32_t size;
+};
+
+struct reloc_info {
+	uint32_t src_reg;
+	uint32_t offset;
+	uint32_t dst_reg;
+};
+
+struct encoder_ctx {
+	struct byte_buffer *payload;
+	struct rand_source *rand;
+
+	struct region_info *regions;
+	size_t num_regions;
+
+	struct reloc_info *relocations;
+	size_t num_relocations;
+
+	size_t reg_offset;
+	int curr_reg;
+};
+
+int pad_payload(struct encoder_ctx *ctx, size_t amount)
 {
-	l->entries = realloc(l->entries, ++l->num_entries * sizeof(const char *));
-	if (!l->entries)
-		return -1;
-	l->entries[l->num_entries - 1] = name;
+	int ret;
+
+	if ((ret = pad(ctx->payload, amount)))
+		return ret;
+	ctx->reg_offset += amount;
 	return 0;
 }
 
+int align_payload(struct encoder_ctx *ctx, size_t alignment)
+{
+	size_t pad_amount = round_up_to_multiple(ctx->payload->num_bytes, alignment) - ctx->payload->num_bytes;
+	return pad_payload(ctx, pad_amount);
+}
+
+static int lookup_reg(struct encoder_ctx *ctx, const char *name)
+{
+	int i;
+
+	for (i = 0; i < ctx->num_regions; i++) {
+		if (strcmp(ctx->regions[i].name, name) == 0)
+			return i;
+	}
+	return -1;
+}
+
+static void add_reloc(struct encoder_ctx *ctx, struct reloc_info reloc)
+{
+	ctx->relocations = realloc(ctx->relocations, ++ctx->num_relocations * sizeof(struct reloc_info));
+	ctx->relocations[ctx->num_relocations - 1] = reloc;
+}
+
+static int first_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
+{
+	struct ast_program *prog;
+	struct ast_node *reg;
+	int i;
+
+	prog = &top_level->data.program;
+	ctx->regions = malloc(prog->num_members * sizeof(struct region_info));
+	if (!ctx->regions)
+		return -ENOMEM;
+
+	for (i = 0; i < prog->num_members; i++) {
+		reg = prog->members[i];
+		/* Offset can only be determined after the second pass. */
+		ctx->regions[i] = (struct region_info){
+			.name = reg->data.region.name,
+			.size = node_size(reg),
+		};
+	}
+	return 0;
+}
 /**
- * Encodes a node as little-endian.
+ * Encodes a value node as little-endian. A value node is one that can be
+ * directly written, i.e. a primitive, a pointer, or an array.
  */
-static int encode_node_le(struct byte_buffer *buf, struct rand_source *r, struct ast_node *node)
+static int encode_value_le(struct encoder_ctx *ctx, struct ast_node *node)
 {
 	char rand_char;
+	size_t offset;
+	int dst_reg;
 	int ret;
 	int i;
 	int j;
 
 	switch (node->type) {
-	case NODE_PROGRAM:
-		for (i = 0; i < node->data.program.num_members; i++)
-			if ((ret = encode_node_le(buf, r, node->data.program.members[i])))
-				return ret;
-		break;
-	case NODE_REGION:
-		for (i = 0; i < node->data.region.num_members; i++)
-			if ((ret = encode_node_le(buf, r, node->data.region.members[i])))
-				return ret;
-		break;
 	case NODE_ARRAY:
 		for (i = 0; i < node->data.array.num_elems; i++) {
 			for (int j = 0; j < node->data.array.elem_size; j++) {
-				if ((ret = append_byte(buf, next(r))))
+				if ((ret = append_byte(ctx->payload, next(ctx->rand))))
 					return ret;
 			}
 		}
+		ctx->reg_offset += node->data.array.num_elems * node->data.array.elem_size;
 		break;
 	case NODE_PRIMITIVE:
-		for (i = 0; i < node->data.primitive.byte_width; i++)
-			if ((ret = append_byte(buf, next(r))))
+		for (i = 0; i < node->data.primitive.byte_width; i++) {
+			if ((ret = append_byte(ctx->payload, next(ctx->rand))))
 				return ret;
+		}
+		ctx->reg_offset += node->data.primitive.byte_width;
 		break;
 	case NODE_POINTER:
+		dst_reg = lookup_reg(ctx, node->data.pointer.points_to);
+		if (dst_reg)
+			return -1;
+		add_reloc(ctx, (struct reloc_info){
+				       .src_reg = ctx->curr_reg, .offset = ctx->reg_offset, .dst_reg = dst_reg });
 		/* Placeholder pointer value, 0xFF...FF. */
 		for (i = 0; i < sizeof(uintptr_t); i++)
-			if ((ret = append_byte(buf, 0xFF)))
+			if ((ret = append_byte(ctx->payload, 0xFF)))
 				return ret;
+		ctx->reg_offset += sizeof(uintptr_t);
 		break;
+	case NODE_PROGRAM:
+	case NODE_REGION:
+	default:
+		/* Only values should be encoded. */
+		return -1;
 	}
 	return 0;
 }
 
+static int encode_region(struct encoder_ctx *ctx, struct ast_region *reg)
+{
+	struct ast_node *child;
+	int alignment;
+	int ret;
+	int i;
+
+	ctx->reg_offset = 0;
+	for (i = 0; i < reg->num_members; i++) {
+		child = reg->members[i];
+		align_payload(ctx, node_alignment(child));
+		if ((ret = encode_value_le(ctx, child)))
+			return ret;
+	}
+	return 0;
+}
+
+static int second_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
+{
+	size_t size_before, size_after;
+	struct ast_node *reg;
+	int ret;
+	int i;
+
+	for (i = 0; i < top_level->data.program.num_members; i++) {
+		reg = top_level->data.program.members[i];
+		align_payload(ctx, node_alignment(reg));
+
+		ctx->curr_reg = i;
+		size_before = ctx->payload->num_bytes;
+		if ((ret = encode_region(ctx, &reg->data.region)))
+			return ret;
+		size_after = ctx->payload->num_bytes;
+
+		ctx->regions[i].size = size_after - size_before;
+	}
+
+	return 0;
+}
+
+/**
+ * Encodes a region array into a byte buffer and returns it.
+ */
+static struct byte_buffer *encode_region_array(struct encoder_ctx *ctx)
+{
+	struct byte_buffer *reg_array;
+	struct region_info info;
+	int ret;
+	int i;
+
+	reg_array = new_byte_buffer(32);
+	if (!reg_array)
+		return NULL;
+
+	if (encode_le(reg_array, ctx->num_regions, sizeof(uint32_t)))
+		goto fail;
+
+	for (i = 0; i < ctx->num_regions; i++) {
+		info = ctx->regions[i];
+		if (encode_le(reg_array, info.offset, sizeof(uint32_t)))
+			goto fail;
+		if (encode_le(reg_array, info.offset, sizeof(uint32_t)))
+			goto fail;
+	}
+	return reg_array;
+
+fail:
+	destroy_byte_buffer(reg_array);
+	return NULL;
+}
+
+static struct byte_buffer *encode_reloc_table(struct encoder_ctx *ctx, size_t padding_amount)
+{
+	struct byte_buffer *reloc_table;
+	struct reloc_info info;
+	int i;
+
+	reloc_table = new_byte_buffer(32);
+	if (!reloc_table)
+		return NULL;
+
+	if (encode_le(reloc_table, ctx->num_relocations, sizeof(uint32_t)))
+		goto fail;
+	if (encode_le(reloc_table, padding_amount, sizeof(uint32_t)))
+		goto fail;
+
+	for (i = 0; i < ctx->num_relocations; i++) {
+		info = ctx->relocations[i];
+		if (encode_le(reloc_table, info.src_reg, sizeof(uint32_t)))
+			goto fail;
+		if (encode_le(reloc_table, info.offset, sizeof(uint32_t)))
+			goto fail;
+		if (encode_le(reloc_table, info.dst_reg, sizeof(uint32_t)))
+			goto fail;
+	}
+	pad(reloc_table, padding_amount);
+
+fail:
+	destroy_byte_buffer(reloc_table);
+	return NULL;
+}
+
 char *encode(struct ast_node *top_level, struct rand_source *r)
 {
-	struct byte_buffer *payload = new_byte_buffer(32);
+	int alignment;
+	int i;
+
+	/* Construct a map of regions. */
+	struct encoder_ctx ctx;
+	if (first_pass(&ctx, top_level))
+		return NULL;
+
+	ctx.payload = new_byte_buffer(32);
+	if (!ctx.payload)
+		return NULL;
+	second_pass(&ctx, top_level);
 }
