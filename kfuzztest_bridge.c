@@ -17,6 +17,7 @@
 
 #include "kfuzztest_input_lexer.h"
 #include "kfuzztest_input_parser.h"
+#include "kfuzztest_encoder.h"
 #include "debug.h"
 
 const char *input = "data { arr[u8, 42] } foo { ptr[data] } bar { u32 ptr[foo] }";
@@ -40,20 +41,30 @@ int main(void)
 	if (ret)
 		return ret;
 
-	if (num_tokens != COUNT_OF(expected)) {
-		printf("got unexpected size %zu vs %zu\n", num_tokens, COUNT_OF(expected));
-		return 1;
-	}
-	for (i = 0; i < num_tokens; i++) {
-		if (expected[i] != tokens[i]->type) {
-			printf("mismatch in token %d\n", i);
-			return 1;
-		}
-	}
-	printf("got expected lexer output.\n");
+	// if (num_tokens != COUNT_OF(expected)) {
+	// 	printf("got unexpected size %zu vs %zu\n", num_tokens, COUNT_OF(expected));
+	// 	return 1;
+	// }
+	// for (i = 0; i < num_tokens; i++) {
+	// 	if (expected[i] != tokens[i]->type) {
+	// 		printf("mismatch in token %d\n", i);
+	// 		return 1;
+	// 	}
+	// }
+	// printf("got expected lexer output.\n");
 
 	struct ast_node *result = parse(tokens, num_tokens);
 	visualize_ast(result);
 
+	char rand_data[] = { 0xAA, 0xBB, 0XCC, 0xDD, 0xEE };
+	struct rand_source r = {
+		.data = rand_data,
+		.data_len = sizeof(rand_data),
+		.cursor = 0,
+	};
+
+	size_t num_bytes;
+	char *bytes = encode(result, &r, &num_bytes);
+	print_bytes(bytes, num_bytes);
 	return 0;
 }

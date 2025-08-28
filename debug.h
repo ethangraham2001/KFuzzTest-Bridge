@@ -77,4 +77,15 @@ static void visualize_node(struct ast_node *node, int indent)
 		break;
 	}
 }
+
+static void print_bytes(const char *bytes, size_t num_bytes)
+{
+	int i;
+
+	for (i = 0; i < num_bytes; i++) {
+		if (i % 4 == 0 && i != 0)
+			printf("\n");
+		printf("0x%02x ", (unsigned char)bytes[i]);
+	}
+}
 #endif /* DEBUG_H */
