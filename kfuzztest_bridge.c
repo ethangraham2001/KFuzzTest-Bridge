@@ -4,14 +4,17 @@
  *
  * Copyright 2025 Google LLC
  */
+#include <asm-generic/errno-base.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "debug.h"
+#include "byte_buffer.h"
 #include "kfuzztest_input_lexer.h"
 #include "kfuzztest_input_parser.h"
 #include "kfuzztest_encoder.h"
-#include "debug.h"
+#include "rand_stream.h"
 
 const char *usage_str = "usage: "
 			"./kfuzztest-bridge <program-description> <fuzz-target-name> <input-file>\n"
@@ -21,9 +24,6 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 
 int main(int argc, char *argv[])
 {
-	int ret;
-	int i;
-
 	if (argc != 4) {
 		printf("%s\n", usage_str);
 		return -1;
@@ -65,7 +65,7 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 	struct token **tokens;
 	size_t num_tokens;
 	size_t num_bytes;
-	char *bytes;
+	struct byte_buffer *bytes;
 	int ret;
 
 	ret = tokenize(input_fmt, &tokens, &num_tokens);
@@ -76,7 +76,11 @@ static int invoke_one(const char *input_fmt, const char *fuzz_target, const char
 
 	rs = new_rand_stream(input_filepath, 1024);
 	bytes = encode(ast_prog, rs, &num_bytes);
-	print_bytes(bytes, num_bytes);
+	if (!bytes)
+		return -EINVAL;
+	print_bytes(bytes->buffer, num_bytes);
 
-	return invoke_kfuzztest_target(fuzz_target, bytes, num_bytes);
+	ret = invoke_kfuzztest_target(fuzz_target, bytes->buffer, num_bytes);
+	destroy_byte_buffer(bytes);
+	return ret;
 }

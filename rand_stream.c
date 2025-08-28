@@ -1,4 +1,4 @@
-#include "rand_source.h"
+#include "rand_stream.h"
 
 static int refill(struct rand_stream *rs)
 {

@@ -11,7 +11,7 @@ CFLAGS = -Wall -g -std=c99 -D_GNU_SOURCE
 TARGET = kfuzztest_bridge
 
 # List of all source files (.c)
-SRCS = kfuzztest_bridge.c kfuzztest_input_lexer.c kfuzztest_input_parser.c kfuzztest_encoder.c rand_source.c
+SRCS = kfuzztest_bridge.c kfuzztest_input_lexer.c kfuzztest_input_parser.c kfuzztest_encoder.c rand_stream.c byte_buffer.c
 
 # Automatic list of object files (.o) based on the source files
 OBJS = $(SRCS:.c=.o)

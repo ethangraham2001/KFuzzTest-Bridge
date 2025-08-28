@@ -27,10 +27,6 @@ static struct token *consume(struct parser *p, enum token_type type, const char 
 	}
 	return advance(p);
 }
-static void retreat(struct parser *p)
-{
-	p->curr_token--;
-}
 
 static bool match(struct parser *p, enum token_type t)
 {
@@ -216,17 +212,14 @@ fail:
 
 size_t node_alignment(struct ast_node *node)
 {
-	int max_alignment;
-	int i;
+	int max_alignment = 1;
 
 	switch (node->type) {
 	case NODE_PROGRAM:
-		max_alignment = 1;
 		for (int i = 0; i < node->data.program.num_members; i++)
 			max_alignment = MAX(max_alignment, node_alignment(node->data.program.members[i]));
 		return max_alignment;
 	case NODE_REGION:
-		max_alignment = 1;
 		for (int i = 0; i < node->data.region.num_members; i++)
 			max_alignment = MAX(max_alignment, node_alignment(node->data.region.members[i]));
 		return max_alignment;
@@ -246,7 +239,6 @@ size_t node_alignment(struct ast_node *node)
 size_t node_size(struct ast_node *node)
 {
 	size_t total = 0;
-	int i;
 
 	switch (node->type) {
 	case NODE_PROGRAM:
@@ -264,6 +256,7 @@ size_t node_size(struct ast_node *node)
 	case NODE_POINTER:
 		return sizeof(uintptr_t);
 	}
+	return 0;
 }
 
 struct ast_node *parse(struct token **tokens, size_t token_count)

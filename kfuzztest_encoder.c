@@ -4,92 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "kfuzztest_encoder.h"
 #include "kfuzztest_input_parser.h"
-#include "rand_source.h"
+#include "rand_stream.h"
+#include "byte_buffer.h"
 
-struct byte_buffer {
-	char *buffer;
-	size_t num_bytes;
-	size_t alloc_size;
-};
-
-struct byte_buffer *new_byte_buffer(size_t initial_size)
-{
-	struct byte_buffer *ret;
-	size_t alloc_size = initial_size >= 8 ? initial_size : 8;
-
-	ret = malloc(sizeof(*ret));
-	if (!ret)
-		return NULL;
-
-	ret->alloc_size = alloc_size;
-	ret->buffer = malloc(alloc_size);
-	if (!ret->buffer) {
-		free(ret);
-		return NULL;
-	}
-	ret->num_bytes = 0;
-	return ret;
-}
-
-static void destroy_byte_buffer(struct byte_buffer *buf)
-{
-	free(buf->buffer);
-	free(buf);
-}
-
-int append_bytes(struct byte_buffer *buf, const char *bytes, size_t num_bytes)
-{
-	size_t req_size = buf->num_bytes + num_bytes;
-	size_t new_size = buf->alloc_size;
-	while (req_size > new_size)
-		new_size *= 2;
-	if (new_size != buf->alloc_size) {
-		buf->alloc_size = new_size;
-		buf->buffer = realloc(buf->buffer, buf->alloc_size);
-		if (!buf->buffer)
-			return -1;
-	}
-	memcpy(buf->buffer + buf->num_bytes, bytes, num_bytes);
-	buf->num_bytes += num_bytes;
-	return 0;
-}
-
-int append_byte(struct byte_buffer *buf, char c)
-{
-	return append_bytes(buf, &c, 1);
-}
-
-static int encode_le(struct byte_buffer *buf, uint64_t value, size_t byte_width)
-{
-	int ret;
-	int i;
-	for (i = 0; i < byte_width; ++i) {
-		if ((ret = append_byte(buf, (uint8_t)((value >> (i * 8)) & 0xFF)))) {
-			return ret;
-		}
-	}
-	return 0;
-}
-
-int pad(struct byte_buffer *buf, size_t num_padding)
-{
-	int ret;
-	size_t i;
-	for (i = 0; i < num_padding; i++)
-		if ((ret = append_byte(buf, 0)))
-			return ret;
-	return 0;
-}
-
-int round_up_to_multiple(int x, int n)
-{
-	if (n == 0) {
-		return x;
-	}
-	return ((x + n - 1) / n) * n;
-}
+#define KFUZZTEST_MAGIC 0xBFACE
+#define KFUZZTEST_PROTO_VERSION 0
+#define KFUZZTEST_POISON_SIZE 8
 
 struct region_info {
 	const char *name;
@@ -117,6 +38,16 @@ struct encoder_ctx {
 	int curr_reg;
 };
 
+static void cleanup_ctx(struct encoder_ctx *ctx)
+{
+	if (ctx->regions)
+		free(ctx->regions);
+	if (ctx->relocations)
+		free(ctx->relocations);
+	if (ctx->payload)
+		destroy_byte_buffer(ctx->payload);
+}
+
 int pad_payload(struct encoder_ctx *ctx, size_t amount)
 {
 	int ret;
@@ -125,6 +56,14 @@ int pad_payload(struct encoder_ctx *ctx, size_t amount)
 		return ret;
 	ctx->reg_offset += amount;
 	return 0;
+}
+
+static int round_up_to_multiple(int x, int n)
+{
+	if (n == 0) {
+		return x;
+	}
+	return ((x + n - 1) / n) * n;
 }
 
 int align_payload(struct encoder_ctx *ctx, size_t alignment)
@@ -150,19 +89,22 @@ static void add_reloc(struct encoder_ctx *ctx, struct reloc_info reloc)
 	ctx->relocations[ctx->num_relocations - 1] = reloc;
 }
 
-static int first_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
+static int build_region_map(struct encoder_ctx *ctx, struct ast_node *top_level)
 {
 	struct ast_program *prog;
 	struct ast_node *reg;
 	int i;
 
+	if (top_level->type != NODE_PROGRAM)
+		return -EINVAL;
+
 	prog = &top_level->data.program;
 	ctx->regions = malloc(prog->num_members * sizeof(struct region_info));
 	if (!ctx->regions)
 		return -ENOMEM;
-	ctx->num_regions = prog->num_members;
 
-	for (i = 0; i < prog->num_members; i++) {
+	ctx->num_regions = prog->num_members;
+	for (i = 0; i < ctx->num_regions; i++) {
 		reg = prog->members[i];
 		/* Offset can only be determined after the second pass. */
 		ctx->regions[i] = (struct region_info){
@@ -178,24 +120,22 @@ static int first_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
  */
 static int encode_value_le(struct encoder_ctx *ctx, struct ast_node *node)
 {
+	size_t array_size;
 	char rand_char;
-	size_t offset;
 	int dst_reg;
 	int ret;
 	int i;
-	int j;
 
 	switch (node->type) {
 	case NODE_ARRAY:
-		for (i = 0; i < node->data.array.num_elems; i++) {
-			for (int j = 0; j < node->data.array.elem_size; j++) {
-				if ((ret = next_byte(ctx->rand, &rand_char)))
-					return ret;
-				if ((ret = append_byte(ctx->payload, rand_char)))
-					return ret;
-			}
+		array_size = node->data.array.num_elems * node->data.array.elem_size;
+		for (i = 0; i < array_size; i++) {
+			if ((ret = next_byte(ctx->rand, &rand_char)))
+				return ret;
+			if ((ret = append_byte(ctx->payload, rand_char)))
+				return ret;
 		}
-		ctx->reg_offset += node->data.array.num_elems * node->data.array.elem_size;
+		ctx->reg_offset += array_size;
 		break;
 	case NODE_PRIMITIVE:
 		for (i = 0; i < node->data.primitive.byte_width; i++) {
@@ -227,7 +167,6 @@ static int encode_value_le(struct encoder_ctx *ctx, struct ast_node *node)
 static int encode_region(struct encoder_ctx *ctx, struct ast_region *reg)
 {
 	struct ast_node *child;
-	int alignment;
 	int ret;
 	int i;
 
@@ -241,9 +180,8 @@ static int encode_region(struct encoder_ctx *ctx, struct ast_region *reg)
 	return 0;
 }
 
-static int second_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
+static int encode_payload(struct encoder_ctx *ctx, struct ast_node *top_level)
 {
-	size_t size_before, size_after;
 	struct ast_node *reg;
 	int ret;
 	int i;
@@ -253,13 +191,10 @@ static int second_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
 		align_payload(ctx, node_alignment(reg));
 
 		ctx->curr_reg = i;
-		size_before = ctx->payload->num_bytes;
 		ctx->regions[i].offset = ctx->payload->num_bytes;
 		if ((ret = encode_region(ctx, &reg->data.region)))
 			return ret;
-		size_after = ctx->payload->num_bytes;
-		ctx->regions[i].size = size_after - size_before;
-		pad_payload(ctx, 8); /* Poison with a KASAN granule. */
+		pad_payload(ctx, KFUZZTEST_POISON_SIZE);
 	}
 	return 0;
 }
@@ -271,7 +206,6 @@ static struct byte_buffer *encode_region_array(struct encoder_ctx *ctx)
 {
 	struct byte_buffer *reg_array;
 	struct region_info info;
-	int ret;
 	int i;
 
 	reg_array = new_byte_buffer(32);
@@ -332,39 +266,59 @@ static size_t reloc_table_size(struct encoder_ctx *ctx)
 	return 2 * sizeof(uint32_t) + 3 * ctx->num_relocations * sizeof(uint32_t);
 }
 
-char *encode(struct ast_node *top_level, struct rand_stream *r, size_t *num_bytes)
+struct byte_buffer *encode(struct ast_node *top_level, struct rand_stream *r, size_t *num_bytes)
 {
-	char prefix[8] = { 0xCE, 0xFA, 0x0B, 0X00, 0x00, 0x00, 0x00, 0x00 };
-	struct byte_buffer *region_array;
-	struct byte_buffer *reloc_table;
-	struct byte_buffer *out;
+	struct byte_buffer *region_array = NULL;
+	struct byte_buffer *final_buffer = NULL;
+	struct byte_buffer *reloc_table = NULL;
+	struct byte_buffer *ret;
 	size_t header_size;
 	int alignment;
-	int i;
 
-	/* Construct a map of regions. */
 	struct encoder_ctx ctx = { 0 };
-	if (first_pass(&ctx, top_level))
+	if (build_region_map(&ctx, top_level)) {
+		free(ctx.regions);
 		return NULL;
+	}
 
 	ctx.rand = r;
 	ctx.payload = new_byte_buffer(32);
-	if (!ctx.payload)
+	if (!ctx.payload) {
+		free(ctx.regions);
 		return NULL;
-	second_pass(&ctx, top_level);
+	}
+	encode_payload(&ctx, top_level);
 
 	region_array = encode_region_array(&ctx);
-	header_size = sizeof(prefix) + region_array->num_bytes + reloc_table_size(&ctx);
+	header_size = sizeof(uint64_t) + region_array->num_bytes + reloc_table_size(&ctx);
 	alignment = node_alignment(top_level);
 	reloc_table = encode_reloc_table(&ctx, round_up_to_multiple(header_size + 8, alignment) - header_size);
 
-	out = new_byte_buffer(128);
-	if (!out)
+	final_buffer = new_byte_buffer(128);
+	if (!final_buffer)
 		return NULL;
-	append_bytes(out, prefix, 8);
-	append_bytes(out, region_array->buffer, region_array->num_bytes);
-	append_bytes(out, reloc_table->buffer, reloc_table->num_bytes);
-	append_bytes(out, ctx.payload->buffer, ctx.payload->num_bytes);
-	*num_bytes = out->num_bytes;
-	return out->buffer;
+
+	ret = NULL;
+
+	if (encode_le(final_buffer, KFUZZTEST_MAGIC, 4))
+		goto construct_output_failure;
+	if (encode_le(final_buffer, KFUZZTEST_PROTO_VERSION, 4))
+		goto construct_output_failure;
+	if (append_bytes(final_buffer, region_array->buffer, region_array->num_bytes))
+		goto construct_output_failure;
+	if (append_bytes(final_buffer, reloc_table->buffer, reloc_table->num_bytes))
+		goto construct_output_failure;
+	if (append_bytes(final_buffer, ctx.payload->buffer, ctx.payload->num_bytes))
+		goto construct_output_failure;
+
+	*num_bytes = final_buffer->num_bytes;
+	ret = final_buffer;
+
+construct_output_failure:
+	if (region_array)
+		destroy_byte_buffer(region_array);
+	if (reloc_table)
+		destroy_byte_buffer(reloc_table);
+	cleanup_ctx(&ctx);
+	return ret;
 }
