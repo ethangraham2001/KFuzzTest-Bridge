@@ -87,5 +87,6 @@ static void print_bytes(const char *bytes, size_t num_bytes)
 			printf("\n");
 		printf("0x%02x ", (unsigned char)bytes[i]);
 	}
+	printf("\n");
 }
 #endif /* DEBUG_H */
