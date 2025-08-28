@@ -20,7 +20,7 @@
 #include "kfuzztest_encoder.h"
 #include "debug.h"
 
-const char *input = "data { arr[u8, 42] } foo { ptr[data] } bar { u32 ptr[foo] }";
+const char *input = "bar { u32 ptr[foo] } foo { ptr[data] } data { arr[u8, 42] }";
 
 enum token_type expected[] = {
 	TOKEN_IDENTIFIER, TOKEN_LBRACE,	     TOKEN_KEYWORD_ARR, TOKEN_LBRACKET,	   TOKEN_KEYWORD_U8,
