@@ -148,7 +148,6 @@ static void add_reloc(struct encoder_ctx *ctx, struct reloc_info reloc)
 {
 	ctx->relocations = realloc(ctx->relocations, ++ctx->num_relocations * sizeof(struct reloc_info));
 	ctx->relocations[ctx->num_relocations - 1] = reloc;
-	printf("added relocation: %zu now\n", ctx->num_relocations);
 }
 
 static int first_pass(struct encoder_ctx *ctx, struct ast_node *top_level)
