@@ -344,13 +344,10 @@ char *encode(struct ast_node *top_level, struct rand_source *r, size_t *num_byte
 	int i;
 
 	/* Construct a map of regions. */
-	struct encoder_ctx ctx;
-	ctx.regions = NULL;
+	struct encoder_ctx ctx = { 0 };
 	if (first_pass(&ctx, top_level))
 		return NULL;
 
-	ctx.relocations = NULL;
-	ctx.num_relocations = 0;
 	ctx.rand = r;
 	ctx.payload = new_byte_buffer(32);
 	if (!ctx.payload)
